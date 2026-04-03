@@ -18,9 +18,9 @@ public class PaymentController {
     public PaymentController(PaymentService service) {
         this.service = service;
     }
-
-    @PostMapping
-    public PaymentResponseDTO process(@RequestBody @Valid PaymentRequestDTO dto) {
-        return service.process(dto);
-    }
+//
+//    @PostMapping
+//    public PaymentResponseDTO process(@RequestBody @Valid PaymentRequestDTO dto) {
+//        return service.process(dto);
+//    }
 }
