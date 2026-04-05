@@ -14,6 +14,7 @@ public class PaymentPublisher {
     private final RabbitTemplate rabbitTemplate;
 
     public void publishSuccess(PaymentResultEvent event) {
+        log.info(" Publishing SUCCESS event: {}", event);
         rabbitTemplate.convertAndSend(
                 "book.events",
                 "payment.success",
@@ -22,6 +23,7 @@ public class PaymentPublisher {
     }
 
     public void publishFailed(PaymentResultEvent event) {
+        log.info(" Publishing FAILED event: {}", event);
         rabbitTemplate.convertAndSend(
                 "book.events",
                 "payment.failed",
