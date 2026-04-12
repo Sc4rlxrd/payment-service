@@ -17,7 +17,7 @@ public class PaymentConsumer {
     private final PaymentService paymentService;
     private final PaymentPublisher paymentPublisher;
 
-    @RabbitListener(queues = "payment.result.queue")
+    @RabbitListener(queues = "payment.process.queue")
     public void handleOrderCreated(OrderCreatedEvent event) {
 
         log.info("Message received from order-service");

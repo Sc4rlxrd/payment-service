@@ -35,7 +35,8 @@ public class PaymentService {
 
             return new PaymentResultEvent(
                     event.getOrderId(),
-                    "SUCCESS"
+                    "SUCCESS",
+                    event.getAmount()
             );
         }
 
@@ -45,7 +46,8 @@ public class PaymentService {
 
             return new PaymentResultEvent(
                     event.getOrderId(),
-                    "FAILED"
+                    "FAILED",
+                    event.getAmount()
             );
         }
 
