@@ -23,7 +23,7 @@ public class PaymentService {
     private final PaymentProcessor processor;
 
     @Transactional
-    public PaymentResultEvent process(OrderCreatedEvent event) {
+    public PaymentResultEvent process(PaymentRequestDTO  event) {
 
         PaymentStatus status = processor.process();
 

@@ -1,6 +1,6 @@
 package com.scarlxrd.payment_service.config.rabbitmq;
 
-import com.scarlxrd.payment_service.dto.OrderCreatedEvent;
+import com.scarlxrd.payment_service.dto.PaymentRequestDTO;
 import com.scarlxrd.payment_service.dto.PaymentResultEvent;
 import com.scarlxrd.payment_service.exception.PaymentException;
 import com.scarlxrd.payment_service.service.PaymentService;
@@ -18,7 +18,7 @@ public class PaymentConsumer {
     private final PaymentPublisher paymentPublisher;
 
     @RabbitListener(queues = "payment.process.queue")
-    public void handleOrderCreated(OrderCreatedEvent event) {
+    public void handleOrderCreated(PaymentRequestDTO event) {
 
         log.info("Message received from order-service");
         try {
