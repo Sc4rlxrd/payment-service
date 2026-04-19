@@ -5,7 +5,9 @@ import com.scarlxrd.payment_service.dto.PaymentRequestDTO;
 import com.scarlxrd.payment_service.dto.PaymentResponseDTO;
 import com.scarlxrd.payment_service.dto.PaymentResultEvent;
 import com.scarlxrd.payment_service.entity.Payment;
+import com.scarlxrd.payment_service.entity.PaymentStatus;
 import com.scarlxrd.payment_service.exception.PaymentException;
+import com.scarlxrd.payment_service.impl.PaymentProcessor;
 import com.scarlxrd.payment_service.repository.PaymentRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -18,39 +20,28 @@ import java.util.Random;
 public class PaymentService {
 
     private final PaymentRepository repository;
-    private final Random random = new Random();
+    private final PaymentProcessor processor;
 
     @Transactional
     public PaymentResultEvent process(OrderCreatedEvent event) {
 
-        int result = random.nextInt(100);
+        PaymentStatus status = processor.process();
 
         Payment payment = new Payment();
         payment.setOrderId(event.getOrderId());
         payment.setAmount(event.getAmount());
+        payment.setStatus(status);
 
-        if (result <= 70) {
-            payment.setStatus("SUCCESS");
-            repository.save(payment);
+        repository.save(payment);
 
-            return new PaymentResultEvent(
-                    event.getOrderId(),
-                    "SUCCESS",
-                    event.getAmount()
-            );
+        if (status == PaymentStatus.UNAVAILABLE) {
+            throw new PaymentException("Serviço de pagamento indisponível");
         }
 
-        if (result <= 90) {
-            payment.setStatus("FAILED");
-            repository.save(payment);
-
-            return new PaymentResultEvent(
-                    event.getOrderId(),
-                    "FAILED",
-                    event.getAmount()
-            );
-        }
-
-        throw new PaymentException("Serviço de pagamento indisponível");
+        return new PaymentResultEvent(
+                event.getOrderId(),
+                status.name(),
+                event.getAmount()
+        );
     }
 }

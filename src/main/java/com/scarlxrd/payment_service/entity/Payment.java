@@ -24,8 +24,9 @@ public class Payment {
     @Column(nullable = false)
     private BigDecimal amount;
 
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    private String status;
+    private PaymentStatus status;
 
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
