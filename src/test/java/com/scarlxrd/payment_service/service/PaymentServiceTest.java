@@ -1,6 +1,6 @@
 package com.scarlxrd.payment_service.service;
 
-import com.scarlxrd.payment_service.dto.OrderCreatedEvent;
+import com.scarlxrd.payment_service.dto.PaymentRequestDTO;
 import com.scarlxrd.payment_service.dto.PaymentResultEvent;
 import com.scarlxrd.payment_service.entity.Payment;
 import com.scarlxrd.payment_service.entity.PaymentStatus;
@@ -9,6 +9,7 @@ import com.scarlxrd.payment_service.impl.PaymentProcessor;
 import com.scarlxrd.payment_service.repository.PaymentRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -23,6 +24,7 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
+@DisplayName("PaymentService - Processamento de pagamentos")
 class PaymentServiceTest {
 
     @Mock
@@ -34,100 +36,131 @@ class PaymentServiceTest {
     @InjectMocks
     private PaymentService paymentService;
 
-    private OrderCreatedEvent event;
+    private PaymentRequestDTO request;
 
     @BeforeEach
     void setUp() {
-        event = new OrderCreatedEvent(
-                UUID.randomUUID(),
-                new BigDecimal("150.00"),
-                "cliente@email.com"
-        );
+        request = new PaymentRequestDTO();
+        request.setOrderId(UUID.randomUUID());
+        request.setAmount(new BigDecimal("150.00"));
     }
 
+    @Nested
+    @DisplayName("Quando o pagamento é bem-sucedido")
+    class SuccessScenario {
 
+        @Test
+        @DisplayName("Deve retornar SUCCESS no resultado")
+        void shouldReturnSuccessWhenProcessorReturnsSuccess() {
 
-    @Test
-    @DisplayName("Deve retornar SUCCESS quando processor retorna SUCCESS")
-    void shouldReturnSuccessWhenProcessorReturnsSuccess() {
-        when(processor.process()).thenReturn(PaymentStatus.SUCCESS);
+            // Given
+            when(processor.process()).thenReturn(PaymentStatus.SUCCESS);
 
-        PaymentResultEvent result = paymentService.process(event);
+            // When
+            PaymentResultEvent result = paymentService.process(request);
 
-        assertThat(result.getOrderId()).isEqualTo(event.getOrderId());
-        assertThat(result.getStatus()).isEqualTo("SUCCESS");
-        assertThat(result.getAmount()).isEqualByComparingTo(event.getAmount());
+            // Then
+            assertThat(result.getOrderId()).isEqualTo(request.getOrderId());
+            assertThat(result.getStatus()).isEqualTo("SUCCESS");
+            assertThat(result.getAmount()).isEqualByComparingTo(request.getAmount());
+        }
+
+        @Test
+        @DisplayName("Deve salvar Payment com status SUCCESS")
+        void shouldSavePaymentWithSuccessStatus() {
+
+            // Given
+            when(processor.process()).thenReturn(PaymentStatus.SUCCESS);
+
+            // When
+            paymentService.process(request);
+
+            // Then
+            ArgumentCaptor<Payment> captor = ArgumentCaptor.forClass(Payment.class);
+            verify(repository).save(captor.capture());
+
+            Payment saved = captor.getValue();
+            assertThat(saved.getOrderId()).isEqualTo(request.getOrderId());
+            assertThat(saved.getAmount()).isEqualByComparingTo(request.getAmount());
+            assertThat(saved.getStatus()).isEqualTo(PaymentStatus.SUCCESS);
+        }
     }
 
-    @Test
-    @DisplayName("Deve salvar Payment com status SUCCESS e dados corretos")
-    void shouldSavePaymentWithSuccessStatus() {
-        when(processor.process()).thenReturn(PaymentStatus.SUCCESS);
+    @Nested
+    @DisplayName("Quando o pagamento falha")
+    class FailedScenario {
 
-        paymentService.process(event);
+        @Test
+        @DisplayName("Deve retornar FAILED no resultado")
+        void shouldReturnFailedWhenProcessorReturnsFailed() {
 
-        ArgumentCaptor<Payment> captor = ArgumentCaptor.forClass(Payment.class);
-        verify(repository).save(captor.capture());
+            // Given
+            when(processor.process()).thenReturn(PaymentStatus.FAILED);
 
-        Payment saved = captor.getValue();
-        assertThat(saved.getOrderId()).isEqualTo(event.getOrderId());
-        assertThat(saved.getAmount()).isEqualByComparingTo(event.getAmount());
-        assertThat(saved.getStatus()).isEqualTo(PaymentStatus.SUCCESS);
+            // When
+            PaymentResultEvent result = paymentService.process(request);
+
+            // Then
+            assertThat(result.getOrderId()).isEqualTo(request.getOrderId());
+            assertThat(result.getStatus()).isEqualTo("FAILED");
+            assertThat(result.getAmount()).isEqualByComparingTo(request.getAmount());
+        }
+
+        @Test
+        @DisplayName("Deve salvar Payment com status FAILED")
+        void shouldSavePaymentWithFailedStatus() {
+
+            // Given
+            when(processor.process()).thenReturn(PaymentStatus.FAILED);
+
+            // When
+            paymentService.process(request);
+
+            // Then
+            ArgumentCaptor<Payment> captor = ArgumentCaptor.forClass(Payment.class);
+            verify(repository).save(captor.capture());
+
+            Payment saved = captor.getValue();
+            assertThat(saved.getOrderId()).isEqualTo(request.getOrderId());
+            assertThat(saved.getAmount()).isEqualByComparingTo(request.getAmount());
+            assertThat(saved.getStatus()).isEqualTo(PaymentStatus.FAILED);
+        }
     }
 
+    @Nested
+    @DisplayName("Quando o serviço de pagamento está indisponível")
+    class UnavailableScenario {
 
+        @Test
+        @DisplayName("Deve lançar PaymentException")
+        void shouldThrowPaymentExceptionWhenUnavailable() {
 
-    @Test
-    @DisplayName("Deve retornar FAILED quando processor retorna FAILED")
-    void shouldReturnFailedWhenProcessorReturnsFailed() {
-        when(processor.process()).thenReturn(PaymentStatus.FAILED);
+            // Given
+            when(processor.process()).thenReturn(PaymentStatus.UNAVAILABLE);
 
-        PaymentResultEvent result = paymentService.process(event);
+            // When / Then
+            assertThatThrownBy(() -> paymentService.process(request))
+                    .isInstanceOf(PaymentException.class)
+                    .hasMessage("Serviço de pagamento indisponível");
+        }
 
-        assertThat(result.getOrderId()).isEqualTo(event.getOrderId());
-        assertThat(result.getStatus()).isEqualTo("FAILED");
-        assertThat(result.getAmount()).isEqualByComparingTo(event.getAmount());
-    }
+        @Test
+        @DisplayName("Deve salvar Payment antes de lançar exceção")
+        void shouldSavePaymentBeforeThrowingException() {
 
-    @Test
-    @DisplayName("Deve salvar Payment com status FAILED e dados corretos")
-    void shouldSavePaymentWithFailedStatus() {
-        when(processor.process()).thenReturn(PaymentStatus.FAILED);
+            // Given
+            when(processor.process()).thenReturn(PaymentStatus.UNAVAILABLE);
 
-        paymentService.process(event);
+            // When
+            assertThatThrownBy(() -> paymentService.process(request))
+                    .isInstanceOf(PaymentException.class);
 
-        ArgumentCaptor<Payment> captor = ArgumentCaptor.forClass(Payment.class);
-        verify(repository).save(captor.capture());
+            // Then
+            ArgumentCaptor<Payment> captor = ArgumentCaptor.forClass(Payment.class);
+            verify(repository).save(captor.capture());
 
-        Payment saved = captor.getValue();
-        assertThat(saved.getOrderId()).isEqualTo(event.getOrderId());
-        assertThat(saved.getAmount()).isEqualByComparingTo(event.getAmount());
-        assertThat(saved.getStatus()).isEqualTo(PaymentStatus.FAILED);
-    }
-
-
-
-    @Test
-    @DisplayName("Deve lançar PaymentException quando processor retorna UNAVAILABLE")
-    void shouldThrowPaymentExceptionWhenProcessorReturnsUnavailable() {
-        when(processor.process()).thenReturn(PaymentStatus.UNAVAILABLE);
-
-        assertThatThrownBy(() -> paymentService.process(event))
-                .isInstanceOf(PaymentException.class)
-                .hasMessage("Serviço de pagamento indisponível");
-    }
-
-    @Test
-    @DisplayName("Deve salvar Payment com status UNAVAILABLE antes de lançar exceção")
-    void shouldSavePaymentBeforeThrowingException() {
-        when(processor.process()).thenReturn(PaymentStatus.UNAVAILABLE);
-
-        assertThatThrownBy(() -> paymentService.process(event))
-                .isInstanceOf(PaymentException.class);
-
-        ArgumentCaptor<Payment> captor = ArgumentCaptor.forClass(Payment.class);
-        verify(repository).save(captor.capture());
-
-        assertThat(captor.getValue().getStatus()).isEqualTo(PaymentStatus.UNAVAILABLE);
+            assertThat(captor.getValue().getStatus())
+                    .isEqualTo(PaymentStatus.UNAVAILABLE);
+        }
     }
 }
