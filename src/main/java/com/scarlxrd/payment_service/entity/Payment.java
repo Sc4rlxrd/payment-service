@@ -1,6 +1,8 @@
 package com.scarlxrd.payment_service.entity;
 
 import jakarta.persistence.*;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
@@ -9,16 +11,24 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Entity
-@Table(name = "payments")
+@Table(
+        name = "payments",
+        uniqueConstraints = @UniqueConstraint(columnNames = "order_id"),
+        indexes = {
+                @Index(name = "idx_payment_order_id", columnList = "order_id")
+        }
+)
 @Data
+@Builder
 @NoArgsConstructor
+@AllArgsConstructor
 public class Payment {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @Column(nullable = false)
+    @Column(name = "order_id",nullable = false, unique = true)
     private UUID orderId;
 
     @Column(nullable = false)

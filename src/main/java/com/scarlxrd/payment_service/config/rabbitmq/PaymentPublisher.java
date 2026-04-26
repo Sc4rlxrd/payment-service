@@ -17,7 +17,11 @@ public class PaymentPublisher {
         rabbitTemplate.convertAndSend(
                 "book.events",
                 "payment.result.success",
-                event
+                event,
+                message -> {
+                    message.getMessageProperties().setCorrelationId(event.getOrderId().toString());
+                    return message;
+                }
         );
     }
 
@@ -25,7 +29,11 @@ public class PaymentPublisher {
         rabbitTemplate.convertAndSend(
                 "book.events",
                 "payment.result.failed",
-                event
+                event,
+                message -> {
+                    message.getMessageProperties().setCorrelationId(event.getOrderId().toString());
+                    return message;
+                }
         );
     }
 }

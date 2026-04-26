@@ -2,6 +2,7 @@ package com.scarlxrd.payment_service.config.rabbitmq;
 
 import com.scarlxrd.payment_service.dto.PaymentRequestDTO;
 import com.scarlxrd.payment_service.dto.PaymentResultEvent;
+import com.scarlxrd.payment_service.entity.PaymentStatus;
 import com.scarlxrd.payment_service.exception.PaymentException;
 import com.scarlxrd.payment_service.service.PaymentService;
 import lombok.RequiredArgsConstructor;
@@ -17,20 +18,24 @@ public class PaymentConsumer {
     private final PaymentService paymentService;
     private final PaymentPublisher paymentPublisher;
 
-    @RabbitListener(queues = "payment.process.queue")
+    @RabbitListener(
+            queues = "payment.process.queue",
+            containerFactory = "rabbitListenerContainerFactory"
+    )
     public void handleOrderCreated(PaymentRequestDTO event) {
 
-        log.info("Message received from order-service");
+        log.info("Message received | orderId={}  amount={}", event.getOrderId(),event.getAmount());
         try {
             PaymentResultEvent result = paymentService.process(event);
-
-            if ("SUCCESS".equals(result.getStatus())) {
+            if (PaymentStatus.SUCCESS.name().equals(result.getStatus())) {
                 paymentPublisher.publishSuccess(result);
-            } else {
+            } else if (PaymentStatus.FAILED.name().equals(result.getStatus())) {
                 paymentPublisher.publishFailed(result);
+            } else {
+                log.warn("Ignoring status: {}", result.getStatus());
             }
-
         } catch (PaymentException ex) {
+            log.error("Error processing payment | orderId={}", event.getOrderId(), ex);
             throw ex;
         }
     }
