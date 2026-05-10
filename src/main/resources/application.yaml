@@ -2,6 +2,8 @@ server:
   port: 8083
 
 spring:
+  application:
+    name: payment-service
   datasource:
     url: jdbc:postgresql://localhost:5435/payment_db
     username: postgres
@@ -24,3 +26,19 @@ spring:
     port: 5672
     username: book_user
     password: book_password
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, prometheus, metrics
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+tracing:
+  sampling:
+    probability: 1.0
