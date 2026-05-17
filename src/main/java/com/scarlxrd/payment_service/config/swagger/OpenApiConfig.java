@@ -2,6 +2,7 @@ package com.scarlxrd.payment_service.config.swagger;
 
 
 import io.swagger.v3.oas.models.Components;
+import io.swagger.v3.oas.models.ExternalDocumentation;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.info.Contact;
 import io.swagger.v3.oas.models.info.Info;
@@ -17,23 +18,45 @@ public class OpenApiConfig {
     @Bean
     public OpenAPI customOpenAPI(@Value("${app.gateway-url:http://localhost:8080}") String gatewayUrl) {
         return new OpenAPI()
-                .info(new Info()
-                        .title("Payment-Service API")
-                        .description("API de gerenciamento de pagamentos")
-                        .version("v1")
-                        .contact(new Contact()
-                                .name("Scarlxrd")
-                                .email("contato@exemplo.com")))
+                .info(buildInfo())
                 .addSecurityItem(new SecurityRequirement().addList("bearerAuth"))
-                .components(new Components()
-                        .addSecuritySchemes("bearerAuth",
-                                new SecurityScheme()
-                                        .name("bearerAuth")
-                                        .type(SecurityScheme.Type.HTTP)
-                                        .scheme("bearer")
-                                        .bearerFormat("JWT")
-                        )
-                );
+                .components(buildComponents())
+                .externalDocs(new ExternalDocumentation()
+                        .description("Repositório do projeto")
+                        .url("https://github.com/Sc4rlxrd/payment-service"));
     }
 
+    private Info buildInfo() {
+        return new Info()
+                .title("Payment-Service API")
+                .description("""
+                        Serviço responsável pelo processamento de pagamentos do BookCommerce.
+                        
+                        **Este serviço não expõe endpoints HTTP diretos.**
+                        A comunicação é feita exclusivamente via RabbitMQ:
+                        
+                        **Consome:**
+                        - `payment.process.queue` → processa o pagamento
+                        
+                        **Publica:**
+                        - `payment.result.success` → pagamento aprovado (~71%)
+                        - `payment.result.failed` → pagamento recusado (~20%)
+                        - `payment.process.queue.dlq` → serviço indisponível (~9%)
+                        """)
+                .version("v1")
+                .contact(new Contact()
+                        .name("Scarlxrd")
+                        .url("https://github.com/Sc4rlxrd")
+                        .email("contato@exemplo.com"));
+    }
+
+    private Components buildComponents() {
+        return new Components()
+                .addSecuritySchemes("bearerAuth",
+                        new SecurityScheme()
+                                .name("bearerAuth")
+                                .type(SecurityScheme.Type.HTTP)
+                                .scheme("bearer")
+                                .bearerFormat("JWT"));
+    }
 }
