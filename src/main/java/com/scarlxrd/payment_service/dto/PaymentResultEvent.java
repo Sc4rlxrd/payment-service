@@ -12,12 +12,9 @@ import java.util.UUID;
 @NoArgsConstructor
 public class PaymentResultEvent {
 
+    private UUID eventId;
     private UUID orderId;
     private String status;
     private BigDecimal amount;
 
-    public PaymentResultEvent(UUID orderId, String status) {
-        this.orderId = orderId;
-        this.status = status;
-    }
 }

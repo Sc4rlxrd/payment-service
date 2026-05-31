@@ -13,6 +13,8 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.UUID;
+
 @RequiredArgsConstructor
 @Service
 @Slf4j
@@ -30,6 +32,7 @@ public class PaymentService {
 
         try {
 
+            UUID eventId = UUID.randomUUID();
             var existing = repository.findByOrderId(event.getOrderId());
 
             if (existing.isPresent()) {
@@ -38,6 +41,7 @@ public class PaymentService {
                 log.warn("Payment already processed | orderId={} status={}", payment.getOrderId(), payment.getStatus());
 
                 return new PaymentResultEvent(
+                        eventId,
                         payment.getOrderId(),
                         payment.getStatus().name(),
                         payment.getAmount()
@@ -66,7 +70,9 @@ public class PaymentService {
                     event.getOrderId(),
                     status);
 
+
             return new PaymentResultEvent(
+                    eventId,
                     payment.getOrderId(),
                     payment.getStatus().name(),
                     payment.getAmount()
@@ -76,12 +82,12 @@ public class PaymentService {
             log.warn("Duplicate detected via DB constraint | orderId={}", event.getOrderId());
 
             Payment existingPayment = repository.findByOrderId(event.getOrderId()).orElseThrow();
-
             return new PaymentResultEvent(
+                   UUID.randomUUID(),
                     existingPayment.getOrderId(),
                     existingPayment.getStatus().name(),
-                    existingPayment.getAmount()
-            );
+                    existingPayment.getAmount());
+
         }finally {
             log.info("Finished processing | orderId={} duration={}ms",
                     event.getOrderId(),
