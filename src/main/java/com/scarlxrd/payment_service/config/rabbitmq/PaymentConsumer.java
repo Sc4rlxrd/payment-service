@@ -16,7 +16,6 @@ import org.springframework.stereotype.Component;
 public class PaymentConsumer {
 
     private final PaymentService paymentService;
-    private final PaymentPublisher paymentPublisher;
 
     @RabbitListener(
             queues = "payment.process.queue",
@@ -24,16 +23,21 @@ public class PaymentConsumer {
     )
     public void handleOrderCreated(PaymentRequestDTO event) {
 
-        log.info("Message received | orderId={}  amount={}", event.getOrderId(),event.getAmount());
+        log.info(
+                "Message received | orderId={} amount={}",
+                event.getOrderId(),
+                event.getAmount()
+        );
+
         try {
             PaymentResultEvent result = paymentService.process(event);
-            if (PaymentStatus.SUCCESS.name().equals(result.getStatus())) {
-                paymentPublisher.publishSuccess(result);
-            } else if (PaymentStatus.FAILED.name().equals(result.getStatus())) {
-                paymentPublisher.publishFailed(result);
-            } else {
-                log.warn("Ignoring status: {}", result.getStatus());
-            }
+
+            log.info(
+                    "Payment processed and outbox event created | orderId={} status={}",
+                    result.getOrderId(),
+                    result.getStatus()
+            );
+
         } catch (PaymentException ex) {
             log.error("Error processing payment | orderId={}", event.getOrderId(), ex);
             throw ex;

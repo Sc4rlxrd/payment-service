@@ -1,11 +1,16 @@
 package com.scarlxrd.payment_service.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.scarlxrd.payment_service.dto.PaymentRequestDTO;
 import com.scarlxrd.payment_service.dto.PaymentResultEvent;
 import com.scarlxrd.payment_service.entity.Payment;
 import com.scarlxrd.payment_service.entity.PaymentStatus;
 import com.scarlxrd.payment_service.exception.PaymentException;
 import com.scarlxrd.payment_service.impl.PaymentProcessor;
+import com.scarlxrd.payment_service.outbox.OutboxEvent;
+import com.scarlxrd.payment_service.outbox.OutboxRepository;
+import com.scarlxrd.payment_service.outbox.OutboxStatus;
 import com.scarlxrd.payment_service.repository.PaymentRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -13,6 +18,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 @RequiredArgsConstructor
@@ -22,6 +28,8 @@ public class PaymentService {
 
     private final PaymentRepository repository;
     private final PaymentProcessor processor;
+    private final OutboxRepository outboxRepository;
+    private final ObjectMapper objectMapper;
 
     @Transactional
     public PaymentResultEvent process(PaymentRequestDTO event) {
@@ -64,19 +72,23 @@ public class PaymentService {
                     .status(status)
                     .build();
 
-            repository.save(payment);
+            Payment savedPayment = repository.save(payment);
 
             log.info("Payment processed successfully | orderId={} status={}",
                     event.getOrderId(),
                     status);
 
 
-            return new PaymentResultEvent(
+            PaymentResultEvent resultEvent = new PaymentResultEvent(
                     eventId,
-                    payment.getOrderId(),
-                    payment.getStatus().name(),
-                    payment.getAmount()
+                    savedPayment.getOrderId(),
+                    savedPayment.getStatus().name(),
+                    savedPayment.getAmount()
             );
+
+            savePaymentResultOutboxEvent(savedPayment, resultEvent);
+
+            return resultEvent;
 
         } catch (DataIntegrityViolationException ex) {
             log.warn("Duplicate detected via DB constraint | orderId={}", event.getOrderId());
@@ -92,6 +104,47 @@ public class PaymentService {
             log.info("Finished processing | orderId={} duration={}ms",
                     event.getOrderId(),
                     System.currentTimeMillis() - start);
+        }
+    }
+
+    private void savePaymentResultOutboxEvent(
+            Payment payment,
+            PaymentResultEvent resultEvent
+    ) {
+        try {
+            String eventType;
+
+            if (payment.getStatus() == PaymentStatus.SUCCESS) {
+                eventType = "PAYMENT_APPROVED";
+            } else if (payment.getStatus() == PaymentStatus.FAILED) {
+                eventType = "PAYMENT_FAILED";
+            } else {
+                log.warn(
+                        "Ignoring payment status for outbox | orderId={} status={}",
+                        payment.getOrderId(),
+                        payment.getStatus()
+                );
+                return;
+            }
+
+            String payload = objectMapper.writeValueAsString(resultEvent);
+
+            OutboxEvent outboxEvent = OutboxEvent.builder()
+                    .eventId(resultEvent.getEventId())
+                    .aggregateId(payment.getOrderId())
+                    .aggregateType("PAYMENT")
+                    .eventType(eventType)
+                    .payload(payload)
+                    .status(OutboxStatus.PENDING)
+                    .retryCount(0)
+                    .createdAt(LocalDateTime.now())
+                    .build();
+
+            outboxRepository.save(outboxEvent);
+
+        } catch (
+                JsonProcessingException e) {
+            throw new PaymentException("Failed to create payment result outbox event");
         }
     }
 }
