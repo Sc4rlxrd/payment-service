@@ -1,5 +1,6 @@
 package com.scarlxrd.payment_service.config.rabbitmq;
 
+import com.scarlxrd.payment_service.config.metrics.RabbitEventMetrics;
 import com.scarlxrd.payment_service.dto.PaymentRequestDTO;
 import com.scarlxrd.payment_service.dto.PaymentResultEvent;
 import com.scarlxrd.payment_service.entity.PaymentStatus;
@@ -16,12 +17,15 @@ import org.springframework.stereotype.Component;
 public class PaymentConsumer {
 
     private final PaymentService paymentService;
+    private final RabbitEventMetrics rabbitMetrics;
 
     @RabbitListener(
             queues = "payment.process.queue",
             containerFactory = "rabbitListenerContainerFactory"
     )
     public void handleOrderCreated(PaymentRequestDTO event) {
+
+        rabbitMetrics.consumed("payment_process");
 
         log.info(
                 "Message received | orderId={} amount={}",
@@ -39,6 +43,7 @@ public class PaymentConsumer {
             );
 
         } catch (PaymentException ex) {
+            rabbitMetrics.failed("payment_process");
             log.error("Error processing payment | orderId={}", event.getOrderId(), ex);
             throw ex;
         }

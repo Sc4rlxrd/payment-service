@@ -2,6 +2,9 @@ package com.scarlxrd.payment_service.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.scarlxrd.payment_service.config.metrics.OutboxMetrics;
+import com.scarlxrd.payment_service.config.metrics.PaymentMetrics;
+import com.scarlxrd.payment_service.config.metrics.RabbitEventMetrics;
 import com.scarlxrd.payment_service.dto.PaymentRequestDTO;
 import com.scarlxrd.payment_service.dto.PaymentResultEvent;
 import com.scarlxrd.payment_service.entity.Payment;
@@ -30,6 +33,9 @@ public class PaymentService {
     private final PaymentProcessor processor;
     private final OutboxRepository outboxRepository;
     private final ObjectMapper objectMapper;
+    private final PaymentMetrics paymentMetrics;
+    private final OutboxMetrics outboxMetrics;
+    private final RabbitEventMetrics rabbitMetrics;
 
     @Transactional
     public PaymentResultEvent process(PaymentRequestDTO event) {
@@ -46,6 +52,8 @@ public class PaymentService {
             if (existing.isPresent()) {
                 Payment payment = existing.get();
 
+                rabbitMetrics.duplicated("payment_process");
+
                 log.warn("Payment already processed | orderId={} status={}", payment.getOrderId(), payment.getStatus());
 
                 return new PaymentResultEvent(
@@ -58,9 +66,12 @@ public class PaymentService {
 
             PaymentStatus status = processor.process();
 
+            paymentMetrics.processed();
+
             log.info("Processing result | orderId={} status={}", event.getOrderId(), status);
 
             if (status == PaymentStatus.UNAVAILABLE) {
+                paymentMetrics.paymentError("service_unavailable");
                 PaymentException ex = new PaymentException("Payment service unavailable");
                 log.error("Payment service unavailable | orderId={}", event.getOrderId(), ex);
                 throw ex;
@@ -73,6 +84,12 @@ public class PaymentService {
                     .build();
 
             Payment savedPayment = repository.save(payment);
+
+            if (savedPayment.getStatus() == PaymentStatus.SUCCESS) {
+                paymentMetrics.paymentSuccess();
+            } else if (savedPayment.getStatus() == PaymentStatus.FAILED) {
+                paymentMetrics.paymentError("payment_failed");
+            }
 
             log.info("Payment processed successfully | orderId={} status={}",
                     event.getOrderId(),
@@ -91,6 +108,7 @@ public class PaymentService {
             return resultEvent;
 
         } catch (DataIntegrityViolationException ex) {
+            rabbitMetrics.duplicated("payment_process");
             log.warn("Duplicate detected via DB constraint | orderId={}", event.getOrderId());
 
             Payment existingPayment = repository.findByOrderId(event.getOrderId()).orElseThrow();
@@ -142,8 +160,10 @@ public class PaymentService {
 
             outboxRepository.save(outboxEvent);
 
-        } catch (
-                JsonProcessingException e) {
+            outboxMetrics.created();
+
+        } catch (JsonProcessingException e) {
+            outboxMetrics.failed();
             throw new PaymentException("Failed to create payment result outbox event");
         }
     }

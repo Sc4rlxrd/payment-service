@@ -2,6 +2,7 @@ package com.scarlxrd.payment_service.outbox;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.scarlxrd.payment_service.config.metrics.RabbitEventMetrics;
 import lombok.RequiredArgsConstructor;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
@@ -12,7 +13,7 @@ public class RabbitEventPublisher implements EventPublisher {
 
     private final RabbitTemplate rabbitTemplate;
     private final ObjectMapper objectMapper;
-
+    private final RabbitEventMetrics rabbitMetrics;
     private static final String EXCHANGE = "book.events";
 
     @Override
@@ -25,8 +26,10 @@ public class RabbitEventPublisher implements EventPublisher {
                     resolveRoutingKey(event),
                     payload
             );
+            rabbitMetrics.published("payment_result");
 
         } catch (Exception e) {
+            rabbitMetrics.failed("payment_result");
             throw new RuntimeException("Failed to publish outbox event", e);
         }
     }
