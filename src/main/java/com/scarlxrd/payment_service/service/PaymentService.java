@@ -83,7 +83,7 @@ public class PaymentService {
                     .status(status)
                     .build();
 
-            Payment savedPayment = repository.save(payment);
+            Payment savedPayment = repository.saveAndFlush(payment);
 
             if (savedPayment.getStatus() == PaymentStatus.SUCCESS) {
                 paymentMetrics.paymentSuccess();
