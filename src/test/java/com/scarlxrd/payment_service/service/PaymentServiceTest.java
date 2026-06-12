@@ -2,6 +2,9 @@ package com.scarlxrd.payment_service.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.scarlxrd.payment_service.config.metrics.OutboxMetrics;
+import com.scarlxrd.payment_service.config.metrics.PaymentMetrics;
+import com.scarlxrd.payment_service.config.metrics.RabbitEventMetrics;
 import com.scarlxrd.payment_service.dto.PaymentRequestDTO;
 import com.scarlxrd.payment_service.dto.PaymentResultEvent;
 import com.scarlxrd.payment_service.entity.Payment;
@@ -21,12 +24,14 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import java.math.BigDecimal;
 import java.util.Optional;
 import java.util.UUID;
 
-import static org.assertj.core.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -44,6 +49,15 @@ class PaymentServiceTest {
 
     @Mock
     private ObjectMapper objectMapper;
+
+    @Mock
+    private PaymentMetrics paymentMetrics;
+
+    @Mock
+    private OutboxMetrics outboxMetrics;
+
+    @Mock
+    private RabbitEventMetrics rabbitMetrics;
 
     @InjectMocks
     private PaymentService paymentService;
@@ -63,7 +77,7 @@ class PaymentServiceTest {
     }
 
     private void mockRepositorySave() {
-        when(repository.save(any(Payment.class)))
+        when(repository.saveAndFlush(any(Payment.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
     }
 
@@ -91,9 +105,14 @@ class PaymentServiceTest {
             PaymentResultEvent result = paymentService.process(request);
 
             // Then
+            assertThat(result.getEventId()).isNotNull();
             assertThat(result.getOrderId()).isEqualTo(request.getOrderId());
             assertThat(result.getStatus()).isEqualTo("SUCCESS");
             assertThat(result.getAmount()).isEqualByComparingTo(request.getAmount());
+
+            verify(paymentMetrics).processed();
+            verify(paymentMetrics).paymentSuccess();
+            verify(outboxMetrics).created();
         }
 
         @Test
@@ -112,7 +131,7 @@ class PaymentServiceTest {
 
             // Then
             ArgumentCaptor<Payment> captor = ArgumentCaptor.forClass(Payment.class);
-            verify(repository).save(captor.capture());
+            verify(repository).saveAndFlush(captor.capture());
 
             Payment saved = captor.getValue();
             assertThat(saved.getOrderId()).isEqualTo(request.getOrderId());
@@ -132,7 +151,7 @@ class PaymentServiceTest {
             when(processor.process()).thenReturn(PaymentStatus.SUCCESS);
 
             // When
-            paymentService.process(request);
+            PaymentResultEvent result = paymentService.process(request);
 
             // Then
             ArgumentCaptor<OutboxEvent> captor = ArgumentCaptor.forClass(OutboxEvent.class);
@@ -140,6 +159,7 @@ class PaymentServiceTest {
 
             OutboxEvent event = captor.getValue();
 
+            assertThat(event.getEventId()).isEqualTo(result.getEventId());
             assertThat(event.getAggregateId()).isEqualTo(request.getOrderId());
             assertThat(event.getAggregateType()).isEqualTo("PAYMENT");
             assertThat(event.getEventType()).isEqualTo("PAYMENT_APPROVED");
@@ -147,6 +167,8 @@ class PaymentServiceTest {
             assertThat(event.getStatus()).isEqualTo(OutboxStatus.PENDING);
             assertThat(event.getRetryCount()).isZero();
             assertThat(event.getCreatedAt()).isNotNull();
+
+            verify(outboxMetrics).created();
         }
     }
 
@@ -169,9 +191,14 @@ class PaymentServiceTest {
             PaymentResultEvent result = paymentService.process(request);
 
             // Then
+            assertThat(result.getEventId()).isNotNull();
             assertThat(result.getOrderId()).isEqualTo(request.getOrderId());
             assertThat(result.getStatus()).isEqualTo("FAILED");
             assertThat(result.getAmount()).isEqualByComparingTo(request.getAmount());
+
+            verify(paymentMetrics).processed();
+            verify(paymentMetrics).paymentError("payment_failed");
+            verify(outboxMetrics).created();
         }
 
         @Test
@@ -190,7 +217,7 @@ class PaymentServiceTest {
 
             // Then
             ArgumentCaptor<Payment> captor = ArgumentCaptor.forClass(Payment.class);
-            verify(repository).save(captor.capture());
+            verify(repository).saveAndFlush(captor.capture());
 
             Payment saved = captor.getValue();
             assertThat(saved.getOrderId()).isEqualTo(request.getOrderId());
@@ -210,7 +237,7 @@ class PaymentServiceTest {
             when(processor.process()).thenReturn(PaymentStatus.FAILED);
 
             // When
-            paymentService.process(request);
+            PaymentResultEvent result = paymentService.process(request);
 
             // Then
             ArgumentCaptor<OutboxEvent> captor = ArgumentCaptor.forClass(OutboxEvent.class);
@@ -218,6 +245,7 @@ class PaymentServiceTest {
 
             OutboxEvent event = captor.getValue();
 
+            assertThat(event.getEventId()).isEqualTo(result.getEventId());
             assertThat(event.getAggregateId()).isEqualTo(request.getOrderId());
             assertThat(event.getAggregateType()).isEqualTo("PAYMENT");
             assertThat(event.getEventType()).isEqualTo("PAYMENT_FAILED");
@@ -225,6 +253,8 @@ class PaymentServiceTest {
             assertThat(event.getStatus()).isEqualTo(OutboxStatus.PENDING);
             assertThat(event.getRetryCount()).isZero();
             assertThat(event.getCreatedAt()).isNotNull();
+
+            verify(outboxMetrics).created();
         }
     }
 
@@ -245,6 +275,9 @@ class PaymentServiceTest {
             assertThatThrownBy(() -> paymentService.process(request))
                     .isInstanceOf(PaymentException.class)
                     .hasMessage("Payment service unavailable");
+
+            verify(paymentMetrics).processed();
+            verify(paymentMetrics).paymentError("service_unavailable");
         }
 
         @Test
@@ -261,7 +294,77 @@ class PaymentServiceTest {
                     .isInstanceOf(PaymentException.class);
 
             // Then
-            verify(repository, never()).save(any(Payment.class));
+            verify(repository, never()).saveAndFlush(any(Payment.class));
+            verify(outboxRepository, never()).save(any(OutboxEvent.class));
+
+            verify(paymentMetrics).processed();
+            verify(paymentMetrics).paymentError("service_unavailable");
+        }
+    }
+
+    @Nested
+    @DisplayName("Quando o pagamento já foi processado")
+    class DuplicateScenario {
+
+        @Test
+        @DisplayName("Deve retornar pagamento existente quando orderId já foi processado")
+        void shouldReturnExistingPaymentWhenOrderAlreadyProcessed() {
+
+            // Given
+            Payment existingPayment = Payment.builder()
+                    .orderId(request.getOrderId())
+                    .amount(request.getAmount())
+                    .status(PaymentStatus.SUCCESS)
+                    .build();
+
+            when(repository.findByOrderId(request.getOrderId()))
+                    .thenReturn(Optional.of(existingPayment));
+
+            // When
+            PaymentResultEvent result = paymentService.process(request);
+
+            // Then
+            assertThat(result.getEventId()).isNotNull();
+            assertThat(result.getOrderId()).isEqualTo(request.getOrderId());
+            assertThat(result.getStatus()).isEqualTo("SUCCESS");
+            assertThat(result.getAmount()).isEqualByComparingTo(request.getAmount());
+
+            verify(rabbitMetrics).duplicated("payment_process");
+            verify(processor, never()).process();
+            verify(repository, never()).saveAndFlush(any(Payment.class));
+            verify(outboxRepository, never()).save(any(OutboxEvent.class));
+        }
+
+        @Test
+        @DisplayName("Deve tratar duplicidade quando banco lançar DataIntegrityViolationException")
+        void shouldHandleDuplicateWhenDatabaseThrowsDataIntegrityViolationException() {
+
+            // Given
+            Payment existingPayment = Payment.builder()
+                    .orderId(request.getOrderId())
+                    .amount(request.getAmount())
+                    .status(PaymentStatus.SUCCESS)
+                    .build();
+
+            when(repository.findByOrderId(request.getOrderId()))
+                    .thenReturn(Optional.empty())
+                    .thenReturn(Optional.of(existingPayment));
+
+            when(processor.process()).thenReturn(PaymentStatus.SUCCESS);
+
+            when(repository.saveAndFlush(any(Payment.class)))
+                    .thenThrow(new DataIntegrityViolationException("Duplicate orderId"));
+
+            // When
+            PaymentResultEvent result = paymentService.process(request);
+
+            // Then
+            assertThat(result.getEventId()).isNotNull();
+            assertThat(result.getOrderId()).isEqualTo(request.getOrderId());
+            assertThat(result.getStatus()).isEqualTo("SUCCESS");
+            assertThat(result.getAmount()).isEqualByComparingTo(request.getAmount());
+
+            verify(rabbitMetrics).duplicated("payment_process");
             verify(outboxRepository, never()).save(any(OutboxEvent.class));
         }
     }
@@ -281,12 +384,16 @@ class PaymentServiceTest {
             when(processor.process()).thenReturn(PaymentStatus.SUCCESS);
 
             when(objectMapper.writeValueAsString(any(PaymentResultEvent.class)))
-                    .thenThrow(new JsonProcessingException("Erro ao serializar") {});
+                    .thenThrow(new JsonProcessingException("Erro ao serializar") {
+                    });
 
             // When / Then
             assertThatThrownBy(() -> paymentService.process(request))
                     .isInstanceOf(PaymentException.class)
                     .hasMessage("Failed to create payment result outbox event");
+
+            verify(outboxMetrics).failed();
+            verify(outboxRepository, never()).save(any(OutboxEvent.class));
         }
     }
 }
