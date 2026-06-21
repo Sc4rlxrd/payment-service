@@ -4,15 +4,13 @@ server:
 spring:
   application:
     name: payment-service
-  datasource:
-    url: jdbc:postgresql://localhost:5435/payment_db
-    username: postgres
-    password: root
+
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
 
   jpa:
     hibernate:
       ddl-auto: validate
-
 
   flyway:
     enabled: true
@@ -21,29 +19,23 @@ spring:
     virtual:
       enabled: true
 
-  rabbitmq:
-    host: localhost
-    port: 5672
-    username: book_user
-    password: book_password
-
 management:
   endpoints:
     web:
       exposure:
         include: health, info, prometheus, metrics
+
   endpoint:
     health:
       show-details: always
+
   metrics:
     tags:
       application: ${spring.application.name}
+
   tracing:
     sampling:
       probability: 1.0
-  zipkin:
-    tracing:
-      endpoint: "http://localhost:9411/api/v2/spans"
 
 logging:
   pattern:
@@ -52,3 +44,4 @@ logging:
 springdoc:
   api-docs:
     path: /v3/api-docs
+
